@@ -68,12 +68,12 @@ struct ether_addr *ether_aton(const char *a)
  */
 
 void change_mac(struct ether_header **ethh, struct ether_addr *p) {
-    (*ethh)->ether_dhost[0] = p->ether_addr_octet[0];
-    (*ethh)->ether_dhost[1] = p->ether_addr_octet[1];
-    (*ethh)->ether_dhost[2] = p->ether_addr_octet[2];
-    (*ethh)->ether_dhost[3] = p->ether_addr_octet[3];
-    (*ethh)->ether_dhost[4] = p->ether_addr_octet[4];
-    (*ethh)->ether_dhost[5] = p->ether_addr_octet[5];
+  (*ethh)->ether_dhost[0] = p->ether_addr_octet[0];
+  (*ethh)->ether_dhost[1] = p->ether_addr_octet[1];
+  (*ethh)->ether_dhost[2] = p->ether_addr_octet[2];
+  (*ethh)->ether_dhost[3] = p->ether_addr_octet[3];
+  (*ethh)->ether_dhost[4] = p->ether_addr_octet[4];
+  (*ethh)->ether_dhost[5] = p->ether_addr_octet[5];
 }
 
 /*
@@ -81,8 +81,8 @@ void change_mac(struct ether_header **ethh, struct ether_addr *p) {
  */
 
 void send_packet(const unsigned char *buffer, struct ip *iph) {
-    unsigned  char *dst = NETMAP_BUF(tring, tring->slot[tring->cur].buf_idx);
-    uint16_t *s, *d;
+  unsigned  char *dst = NETMAP_BUF(tring, tring->slot[tring->cur].buf_idx);
+  uint16_t *s, *d;
 	struct ether_addr *p;
     nm_pkt_copy(buffer, dst, length);
 	s = (uint16_t *)buffer;
@@ -95,10 +95,10 @@ void send_packet(const unsigned char *buffer, struct ip *iph) {
     struct ip *ipd = (struct ip *)(ethh + 1);
 	//copy dst ip to packet ip
 	inet_pton(AF_INET, dst_ip, &(ipd->ip_dst));
-    // probably packet is ready to send*/
-    tring->cur = nm_ring_next(tring, tring->cur);
-    tring->head = tring->cur;
-    ioctl(fd, NIOCTXSYNC, NULL);
+  // probably packet is ready to send*/
+  tring->cur = nm_ring_next(tring, tring->cur);
+  tring->head = tring->cur;
+  ioctl(fd, NIOCTXSYNC, NULL);
 }
 
 
@@ -108,7 +108,7 @@ void decode_ip(const unsigned char *buffer, struct ip *iph) {
 	char src_ip_str[INET_ADDRSTRLEN];
 	char dst_ip_str[INET_ADDRSTRLEN];
 	inet_ntop(AF_INET, &(iph->ip_src), src_ip_str, INET_ADDRSTRLEN);
-    inet_ntop(AF_INET, &(iph->ip_dst), dst_ip_str, INET_ADDRSTRLEN);
+  inet_ntop(AF_INET, &(iph->ip_dst), dst_ip_str, INET_ADDRSTRLEN);
 	printf("source ip:%s\n", src_ip_str);
 	printf("Dest ip:%s\n", dst_ip_str);
 
@@ -135,25 +135,25 @@ void get_ether(const unsigned char *buffer) {
 
 	//print src and dst mac
 	printf("source mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_shost[0], ethh->ether_shost[1], ethh->ether_shost[2], ethh->ether_shost[3], ethh->ether_shost[4], ethh->ether_shost[5]);
-    printf("dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_dhost[0], ethh->ether_dhost[1], ethh->ether_dhost[2], ethh->ether_dhost[3], ethh->ether_dhost[4], ethh->ether_dhost[5]);	
+  printf("dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_dhost[0], ethh->ether_dhost[1], ethh->ether_dhost[2], ethh->ether_dhost[3], ethh->ether_dhost[4], ethh->ether_dhost[5]);	
 
 	switch (ntohs(ethh->ether_type)) {
-  		case ETHERTYPE_IP:
-			printf("it is ip packet\n");
-			decode_ip(buffer, (struct ip *)(ethh + 1));
-    		break;
-  		case ETHERTYPE_IPV6:
+    case ETHERTYPE_IP:
+		  printf("it is ip packet\n");
+		  decode_ip(buffer, (struct ip *)(ethh + 1));
+      break;
+  	case ETHERTYPE_IPV6:
 			printf("it is ipv6\n");
-		    break;
-		case ETHERTYPE_VLAN:
-			printf("vlan\n");
-	    	break;
-		 case ETHERTYPE_ARP:
-			printf("arp\n");
-	    	send_packet(buffer, (struct ip *)(ethh + 1));
-	  	default:
-	   		/* others */
-	    	break;
+      break;
+    case ETHERTYPE_VLAN:
+		  printf("vlan\n");
+	    break;
+    case ETHERTYPE_ARP:
+		  printf("arp\n");
+	    send_packet(buffer, (struct ip *)(ethh + 1));
+	  default:
+	    /* others */
+      break;
   	}
 
 }
@@ -174,15 +174,15 @@ void receive_packets(void) {
     fds.events = POLLIN;
     int i, j;
     for(;;) {
-		poll(&fds, 1, -1);
-        i = ring->cur;
-        length = ring->slot[i].len;
-        src = NETMAP_BUF(ring, ring->slot[i].buf_idx);
-		printf("############################# packet received ###########################\n");
-		get_ether(src);
-        printf("############################# packet sent #################################\n\n\n");
-        ring->cur = nm_ring_next(ring, i);
-        ring->head = ring->cur;
+      poll(&fds, 1, -1);
+      i = ring->cur;
+      length = ring->slot[i].len;
+      src = NETMAP_BUF(ring, ring->slot[i].buf_idx);
+		  printf("############################# packet received ###########################\n");
+		  get_ether(src);
+      printf("############################# packet sent #################################\n\n\n");
+      ring->cur = nm_ring_next(ring, i);
+      ring->head = ring->cur;
     }
 	close(fd);
 }
