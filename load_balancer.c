@@ -83,18 +83,18 @@ void change_mac(struct ether_header **ethh, struct ether_addr *p) {
 void send_packet(const unsigned char *buffer, struct ip *iph) {
   unsigned  char *dst = NETMAP_BUF(tring, tring->slot[tring->cur].buf_idx);
   uint16_t *s, *d;
-	struct ether_addr *p;
-    nm_pkt_copy(buffer, dst, length);
-	s = (uint16_t *)buffer;
-	d = (uint16_t *)dst;
+  struct ether_addr *p;
+  nm_pkt_copy(buffer, dst, length);
+  s = (uint16_t *)buffer;
+  d = (uint16_t *)dst;
 
-	//rewrite destination mac and ip address */
-    struct ether_header *ethh = (struct ether_header *)dst;
-    p = ether_aton(dst_mac);
-	change_mac(&ethh, p);
-    struct ip *ipd = (struct ip *)(ethh + 1);
-	//copy dst ip to packet ip
-	inet_pton(AF_INET, dst_ip, &(ipd->ip_dst));
+  //rewrite destination mac and ip address */
+  struct ether_header *ethh = (struct ether_header *)dst;
+  p = ether_aton(dst_mac);
+  change_mac(&ethh, p);
+  struct ip *ipd = (struct ip *)(ethh + 1);
+  //copy dst ip to packet ip
+  inet_pton(AF_INET, dst_ip, &(ipd->ip_dst));
   // probably packet is ready to send*/
   tring->cur = nm_ring_next(tring, tring->cur);
   tring->head = tring->cur;
@@ -112,13 +112,13 @@ void decode_ip(const unsigned char *buffer, struct ip *iph) {
 	printf("source ip:%s\n", src_ip_str);
 	printf("Dest ip:%s\n", dst_ip_str);
 
-    switch (iph->ip_p) {
+  switch (iph->ip_p) {
     case IPPROTO_UDP:
       send_packet(buffer, iph);
       break;
 
     case IPPROTO_TCP:
-	  send_packet(buffer, iph);
+	    send_packet(buffer, iph);
       break;
     case IPPROTO_IPIP:
       /* tunneling */
@@ -131,30 +131,30 @@ void decode_ip(const unsigned char *buffer, struct ip *iph) {
 }
 
 void get_ether(const unsigned char *buffer) {
-	struct ether_header *ethh = (struct ether_header *)buffer;
-
-	//print src and dst mac
-	printf("source mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_shost[0], ethh->ether_shost[1], ethh->ether_shost[2], ethh->ether_shost[3], ethh->ether_shost[4], ethh->ether_shost[5]);
+  struct ether_header *ethh = (struct ether_header *)buffer;
+  
+  //print src and dst mac
+  printf("source mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_shost[0], ethh->ether_shost[1], ethh->ether_shost[2], ethh->ether_shost[3], ethh->ether_shost[4], ethh->ether_shost[5]);
   printf("dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_dhost[0], ethh->ether_dhost[1], ethh->ether_dhost[2], ethh->ether_dhost[3], ethh->ether_dhost[4], ethh->ether_dhost[5]);	
 
-	switch (ntohs(ethh->ether_type)) {
+  switch (ntohs(ethh->ether_type)) {
     case ETHERTYPE_IP:
-		  printf("it is ip packet\n");
-		  decode_ip(buffer, (struct ip *)(ethh + 1));
+  	  printf("it is ip packet\n");
+  	  decode_ip(buffer, (struct ip *)(ethh + 1));
       break;
-  	case ETHERTYPE_IPV6:
-			printf("it is ipv6\n");
+    case ETHERTYPE_IPV6:
+      printf("it is ipv6\n");
       break;
     case ETHERTYPE_VLAN:
 		  printf("vlan\n");
-	    break;
-    case ETHERTYPE_ARP:
-		  printf("arp\n");
-	    send_packet(buffer, (struct ip *)(ethh + 1));
-	  default:
-	    /* others */
       break;
-  	}
+    case ETHERTYPE_ARP:
+      printf("arp\n");
+      send_packet(buffer, (struct ip *)(ethh + 1));
+    default:
+      /* others */
+      break;
+    }
 
 }
 
