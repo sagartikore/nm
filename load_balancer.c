@@ -104,13 +104,13 @@ void send_packet(const unsigned char *buffer, struct ip *iph) {
 
 void decode_ip(const unsigned char *buffer, struct ip *iph) {
 
-	//print source and dest ip
-	char src_ip_str[INET_ADDRSTRLEN];
-	char dst_ip_str[INET_ADDRSTRLEN];
-	inet_ntop(AF_INET, &(iph->ip_src), src_ip_str, INET_ADDRSTRLEN);
+  //print source and dest ip
+  char src_ip_str[INET_ADDRSTRLEN];
+  char dst_ip_str[INET_ADDRSTRLEN];
+  inet_ntop(AF_INET, &(iph->ip_src), src_ip_str, INET_ADDRSTRLEN);
   inet_ntop(AF_INET, &(iph->ip_dst), dst_ip_str, INET_ADDRSTRLEN);
-	printf("source ip:%s\n", src_ip_str);
-	printf("Dest ip:%s\n", dst_ip_str);
+  printf("source ip:%s\n", src_ip_str);
+  printf("Dest ip:%s\n", dst_ip_str);
 
   switch (iph->ip_p) {
     case IPPROTO_UDP:
@@ -139,14 +139,14 @@ void get_ether(const unsigned char *buffer) {
 
   switch (ntohs(ethh->ether_type)) {
     case ETHERTYPE_IP:
-  	  printf("it is ip packet\n");
-  	  decode_ip(buffer, (struct ip *)(ethh + 1));
+      printf("it is ip packet\n");
+      decode_ip(buffer, (struct ip *)(ethh + 1));
       break;
     case ETHERTYPE_IPV6:
       printf("it is ipv6\n");
       break;
     case ETHERTYPE_VLAN:
-		  printf("vlan\n");
+      printf("vlan\n");
       break;
     case ETHERTYPE_ARP:
       printf("arp\n");
@@ -178,13 +178,13 @@ void receive_packets(void) {
       i = ring->cur;
       length = ring->slot[i].len;
       src = NETMAP_BUF(ring, ring->slot[i].buf_idx);
-		  printf("############################# packet received ###########################\n");
-		  get_ether(src);
+      printf("############################# packet received ###########################\n");
+      get_ether(src);
       printf("############################# packet sent #################################\n\n\n");
       ring->cur = nm_ring_next(ring, i);
       ring->head = ring->cur;
     }
-	close(fd);
+  close(fd);
 }
 
 
