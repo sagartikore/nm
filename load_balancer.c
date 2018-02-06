@@ -180,7 +180,6 @@ void receive_packets(void) {
         src = NETMAP_BUF(ring, ring->slot[i].buf_idx);
 		printf("############################# packet received ###########################\n");
 		get_ether(src);
-        spkt = (uint16_t *) src;
         printf("############################# packet sent #################################\n\n\n");
         ring->cur = nm_ring_next(ring, i);
         ring->head = ring->cur;
