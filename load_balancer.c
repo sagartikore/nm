@@ -6,17 +6,46 @@
 #include <sys/mman.h>
 #include <net/ethernet.h>
 #include <netinet/ip.h>
+#include <netinet/udp.h>
+
 #include <inttypes.h>
 #include <netinet/in.h>
 
+#define ARP_REQUEST 1
+#define ARP_REPLY 2
+
 struct netmap_if *nifp;
-struct netmap_ring *ring, *tring;
+struct netmap_ring *send_ring, *receive_ring;
+struct nm_desc *d;
 struct nmreq nmr;
 struct pollfd fds;
 int fd, length;
 
 const char *dst_ip = "169.254.9.8";
+const char *src_ip = "169.254.9.13";
 const char *dst_mac = "00:aa:bb:cc:dd:03";
+const char *src_mac = "00:aa:bb:cc:dd:04";
+int do_abort = 1;
+
+/* Define a struct for ARP header */
+typedef struct _arp_hdr arp_hdr;
+struct _arp_hdr {
+  uint16_t htype;
+  uint16_t ptype;
+  uint8_t hlen;
+  uint8_t plen;
+  uint16_t opcode;
+  uint8_t sender_mac[6];
+  uint32_t sender_ip;
+  uint8_t target_mac[6];
+  uint32_t target_ip;
+} __attribute__((__packed__));
+
+/* ARP packet */
+struct arp_pkt {
+    struct ether_header eh;
+    arp_hdr ah;
+} __attribute__((__packed__));
 
 
 u_int get_vnet_hdr_len(struct nm_desc *nmd)
@@ -42,7 +71,7 @@ u_int get_vnet_hdr_len(struct nm_desc *nmd)
  * Convert an ASCII representation of an ethernet address to
  * binary form.
  */
-struct ether_addr *ether_aton(const char *a)
+struct ether_addr *ether_aton_dst(const char *a)
 {
     int i;
     static struct ether_addr o;
@@ -63,11 +92,32 @@ struct ether_addr *ether_aton(const char *a)
     return ((struct ether_addr *)&o);
 }
 
+struct ether_addr *ether_aton_src(const char *a)
+{
+    int i;
+    static struct ether_addr q;
+    unsigned int o0, o1, o2, o3, o4, o5;
+
+    i = sscanf(a, "%x:%x:%x:%x:%x:%x", &o0, &o1, &o2, &o3, &o4, &o5);
+
+    if (i != 6)
+        return (NULL);
+
+    q.ether_addr_octet[0]=o0;
+    q.ether_addr_octet[1]=o1;
+    q.ether_addr_octet[2]=o2;
+    q.ether_addr_octet[3]=o3;
+    q.ether_addr_octet[4]=o4;
+    q.ether_addr_octet[5]=o5;
+
+    return ((struct ether_addr *)&q);
+}
+
 /* 
  * Change the destination mac field with ether_addr from given eth header
  */
 
-void change_mac(struct ether_header **ethh, struct ether_addr *p) {
+void change_dst_mac(struct ether_header **ethh, struct ether_addr *p) {
   (*ethh)->ether_dhost[0] = p->ether_addr_octet[0];
   (*ethh)->ether_dhost[1] = p->ether_addr_octet[1];
   (*ethh)->ether_dhost[2] = p->ether_addr_octet[2];
@@ -76,49 +126,212 @@ void change_mac(struct ether_header **ethh, struct ether_addr *p) {
   (*ethh)->ether_dhost[5] = p->ether_addr_octet[5];
 }
 
+/* 
+ * Change the source mac field with ether_addr from given eth header
+ */
+
+void change_src_mac(struct ether_header **ethh, struct ether_addr *p) {
+  (*ethh)->ether_shost[0] = p->ether_addr_octet[0];
+  (*ethh)->ether_shost[1] = p->ether_addr_octet[1];
+  (*ethh)->ether_shost[2] = p->ether_addr_octet[2];
+  (*ethh)->ether_shost[3] = p->ether_addr_octet[3];
+  (*ethh)->ether_shost[4] = p->ether_addr_octet[4];
+  (*ethh)->ether_shost[5] = p->ether_addr_octet[5];
+}
+
+/* Compute the checksum of the given ip header. */
+static uint32_t
+checksum(const void *data, uint16_t len, uint32_t sum)
+{
+        const uint8_t *addr = data;
+    uint32_t i;
+
+        /* Checksum all the pairs of bytes first... */
+        for (i = 0; i < (len & ~1U); i += 2) {
+                sum += (u_int16_t)ntohs(*((u_int16_t *)(addr + i)));
+                if (sum > 0xFFFF)
+                        sum -= 0xFFFF;
+        }
+    /*
+     * If there's a single byte left over, checksum it, too.
+     * Network byte order is big-endian, so the remaining byte is
+     * the high byte.
+     */
+    if (i < len) {
+        sum += addr[i] << 8;
+        if (sum > 0xFFFF)
+            sum -= 0xFFFF;
+    }
+    return sum;
+}
+
+static uint16_t
+wrapsum(uint32_t sum)
+{
+    sum = ~sum & 0xFFFF;
+    return (htons(sum));
+}
+
+/*---------------------------------------------------------------------*/
+/*
+ * Prepares ARP packet in the buffer passed as parameter
+ */
+void prepare_arp_packet(struct arp_pkt *arp_pkt, const uint32_t *src_ip, const uint32_t *dest_ip, struct ether_addr *src_mac, struct ether_addr *dest_mac, uint16_t htype) {
+    memcpy(arp_pkt->eh.ether_shost, src_mac,  6);
+    memcpy(arp_pkt->eh.ether_dhost, dest_mac,  6);
+    arp_pkt->eh.ether_type = htons(ETHERTYPE_ARP);
+
+    arp_pkt->ah.htype = htons (1);
+    arp_pkt->ah.ptype =  htons (ETHERTYPE_IP);
+    arp_pkt->ah.hlen = 6;
+    arp_pkt->ah.plen = 4;
+    arp_pkt->ah.opcode = htype;
+
+    arp_pkt->ah.sender_ip = *src_ip;
+    arp_pkt->ah.target_ip = *dest_ip;
+
+    memcpy(arp_pkt->ah.sender_mac, src_mac,  6);
+    if (ntohs(htype) == 1) {
+        memset (arp_pkt->ah.target_mac, 0, 6 * sizeof (uint8_t));
+    } else {
+        memcpy(arp_pkt->ah.target_mac, dest_mac,  6);
+    }
+}
+
+
+void arp_reply(struct arp_pkt *arppkt) {
+    unsigned  char *tx_buf = NETMAP_BUF(send_ring, send_ring->slot[send_ring->cur].buf_idx);
+    struct netmap_slot *slot = &send_ring->slot[send_ring->cur];
+    //struct arp_pkt *arp_reply = (struct arp_pkt *)(tx_buf - sizeof(struct ether_header));
+    struct arp_pkt *arp_reply = (struct arp_pkt *)(tx_buf);
+    struct ether_addr d;
+    memcpy(&d, (struct ether_addr *)arppkt->ah.sender_mac, 6);
+    struct ether_addr s = *ether_aton_src(src_mac);
+    prepare_arp_packet(arp_reply, &arppkt->ah.target_ip, &arppkt->ah.sender_ip, &s, &d, htons(2));
+    slot->len = sizeof(struct arp_pkt);
+   // slot->flags = 0;
+   // slot->flags |= NS_REPORT;
+    send_ring->cur = nm_ring_next(send_ring, send_ring->cur);
+    send_ring->head = send_ring->cur;
+    ioctl(fds.fd, NIOCTXSYNC, NULL);
+    printf("arp reply sent\n");
+  printf("arp source mac:%02x:%02x:%02x:%02x:%02x:%02x\n", arp_reply->eh.ether_shost[0], arp_reply->eh.ether_shost[1], arp_reply->eh.ether_shost[2], arp_reply->eh.ether_shost[3], arp_reply->eh.ether_shost[4], arp_reply->eh.ether_shost[5]);
+  printf("arp dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", arp_reply->eh.ether_dhost[0], arp_reply->eh.ether_dhost[1], arp_reply->eh.ether_dhost[2], arp_reply->eh.ether_dhost[3], arp_reply->eh.ether_dhost[4], arp_reply->eh.ether_dhost[5]);
+      char arp_src_ip[INET_ADDRSTRLEN];
+      char arp_target_ip[INET_ADDRSTRLEN];
+      inet_ntop(AF_INET, &(arp_reply->ah.target_ip), arp_target_ip, INET_ADDRSTRLEN);
+      inet_ntop(AF_INET, &(arp_reply->ah.sender_ip), arp_src_ip, INET_ADDRSTRLEN);
+      printf("arp target ip %s\n", arp_target_ip);
+      printf("arp source ip %s\n", arp_src_ip);
+
+}
+
+void arp_request(const uint32_t *dest_ip) {
+    unsigned  char *tx_buf = NETMAP_BUF(send_ring, send_ring->slot[send_ring->cur].buf_idx);
+    struct netmap_slot *slot = &send_ring->slot[send_ring->cur];
+    struct arp_pkt *arp_request_pkt = (struct arp_pkt *)(tx_buf);
+    uint32_t source_ip;
+    inet_pton(AF_INET, src_ip, &(source_ip));
+    struct ether_addr source_mac = *ether_aton_src(src_mac);
+    struct ether_addr dest_mac = *ether_aton_dst("ff:ff:ff:ff:ff:ff");
+    prepare_arp_packet(arp_request_pkt, &source_ip, dest_ip, &source_mac, &dest_mac, htons(1));
+
+    slot->len = sizeof(struct arp_pkt);
+   // slot->flags = 0;
+   // slot->flags |= NS_REPORT;
+    send_ring->cur = nm_ring_next(send_ring, send_ring->cur);
+    send_ring->head = send_ring->cur;
+    ioctl(fds.fd, NIOCTXSYNC, NULL);
+    printf("arp request sent\n");
+
+}
+
+
 /*
  * Rewrites destination mac address and ip address and send the packet
  */
 
 void send_packet(const unsigned char *buffer, struct ip *iph) {
-  unsigned  char *dst = NETMAP_BUF(tring, tring->slot[tring->cur].buf_idx);
-  uint16_t *s, *d;
-  struct ether_addr *p;
-  nm_pkt_copy(buffer, dst, length);
-  s = (uint16_t *)buffer;
-  d = (uint16_t *)dst;
 
-  //rewrite destination mac and ip address */
+  unsigned  char *dst = NETMAP_BUF(send_ring, send_ring->slot[send_ring->cur].buf_idx);
+  struct ether_addr *p;
+  struct ether_addr *s;
+  nm_pkt_copy(buffer, dst, length);
+
+  /*rewrite destination mac and ip address */
   struct ether_header *ethh = (struct ether_header *)dst;
-  p = ether_aton(dst_mac);
-  change_mac(&ethh, p);
+  p = ether_aton_dst(dst_mac);
+  s = ether_aton_src(src_mac);
+  change_dst_mac(&ethh, p);
+  change_src_mac(&ethh, s);
+  printf("changed dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_dhost[0], ethh->ether_dhost[1], ethh->ether_dhost[2], ethh->ether_dhost[3], ethh->ether_dhost[4], ethh->ether_dhost[5]);
+
   struct ip *ipd = (struct ip *)(ethh + 1);
-  //copy dst ip to packet ip
+  struct udphdr *udp = (struct udphdr *)(ipd + 1);
+  /*copy dst ip to packet ip*/
   inet_pton(AF_INET, dst_ip, &(ipd->ip_dst));
-  // probably packet is ready to send*/
-  tring->cur = nm_ring_next(tring, tring->cur);
-  tring->head = tring->cur;
-  ioctl(fd, NIOCTXSYNC, NULL);
+
+  /*probably packet is ready to send*/
+  char src_ip_str[INET_ADDRSTRLEN];
+  char dst_ip_str[INET_ADDRSTRLEN];
+  inet_ntop(AF_INET, &(ipd->ip_src), src_ip_str, INET_ADDRSTRLEN);
+  inet_ntop(AF_INET, &(ipd->ip_dst), dst_ip_str, INET_ADDRSTRLEN);
+  printf("changed source ip:%s\n", src_ip_str);
+  printf("changed Dest ip:%s\n", dst_ip_str);
+  printf("ip checksum before:%x\n", ipd->ip_sum);
+  ipd->ip_sum = 0x0000;
+  ipd->ip_sum = wrapsum(checksum(ipd, sizeof(*ipd), 0));
+
+  printf("ip checksum after:%x\n", ipd->ip_sum);
+  udp->uh_sum=0;
+  send_ring->cur = nm_ring_next(send_ring, send_ring->cur);
+  send_ring->head = send_ring->cur;
+  ioctl(fds.fd, NIOCTXSYNC, NULL);
 }
 
 
 void decode_ip(const unsigned char *buffer, struct ip *iph) {
 
-  //print source and dest ip
   char src_ip_str[INET_ADDRSTRLEN];
   char dst_ip_str[INET_ADDRSTRLEN];
   inet_ntop(AF_INET, &(iph->ip_src), src_ip_str, INET_ADDRSTRLEN);
   inet_ntop(AF_INET, &(iph->ip_dst), dst_ip_str, INET_ADDRSTRLEN);
   printf("source ip:%s\n", src_ip_str);
   printf("Dest ip:%s\n", dst_ip_str);
-
+  uint32_t source_ip;
+  char *arp_buffer;
   switch (iph->ip_p) {
     case IPPROTO_UDP:
-      send_packet(buffer, iph);
-      break;
+      /* send arp request to get destination mac */
+      
+        inet_pton(AF_INET, dst_ip, &(source_ip));
+        arp_request(&source_ip);
+       /*wait for arp reply */
+
+       /* poll(&fds,  1, -1);
+        arp_buffer = NETMAP_BUF(receive_ring, receive_ring->slot[receive_ring->cur].buf_idx);
+        // check if arp reply
+        struct ether_header *ethh = (struct ether_header *)arp_buffer;
+        if(ntohs(ethh->ether_type) == ETHERTYPE_ARP) {
+            printf("here\n");
+            struct arp_pkt *arppkt = (struct arp_pkt *)arp_buffer;
+            char arp_target_ip[INET_ADDRSTRLEN];
+            char arp_source_ip[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &(arppkt->ah.target_ip), arp_target_ip, INET_ADDRSTRLEN);
+            inet_ntop(AF_INET, &(arppkt->ah.sender_ip), arp_source_ip, INET_ADDRSTRLEN);
+
+            if(strcmp(arp_target_ip, src_ip) == 0){
+                if (ntohs(arppkt->ah.opcode) == ARP_REPLY) {
+                    printf("************************");
+                }
+            }
+        }
+        */
+        send_packet(buffer, iph);
+        break;
 
     case IPPROTO_TCP:
-	    send_packet(buffer, iph);
+	    //send_packet(buffer, iph);
       break;
     case IPPROTO_IPIP:
       /* tunneling */
@@ -132,7 +345,6 @@ void decode_ip(const unsigned char *buffer, struct ip *iph) {
 
 void get_ether(const unsigned char *buffer) {
   struct ether_header *ethh = (struct ether_header *)buffer;
-  
   //print src and dst mac
   printf("source mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_shost[0], ethh->ether_shost[1], ethh->ether_shost[2], ethh->ether_shost[3], ethh->ether_shost[4], ethh->ether_shost[5]);
   printf("dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_dhost[0], ethh->ether_dhost[1], ethh->ether_dhost[2], ethh->ether_dhost[3], ethh->ether_dhost[4], ethh->ether_dhost[5]);	
@@ -150,7 +362,25 @@ void get_ether(const unsigned char *buffer) {
       break;
     case ETHERTYPE_ARP:
       printf("arp\n");
-      send_packet(buffer, (struct ip *)(ethh + 1));
+      /* it is arp request, send arp reply */
+      struct arp_pkt *arppkt = (struct arp_pkt *)buffer;
+      char arp_target_ip[INET_ADDRSTRLEN];
+      char arp_source_ip[INET_ADDRSTRLEN];
+      inet_ntop(AF_INET, &(arppkt->ah.target_ip), arp_target_ip, INET_ADDRSTRLEN);
+      inet_ntop(AF_INET, &(arppkt->ah.sender_ip), arp_source_ip, INET_ADDRSTRLEN);
+      printf("arp sender:%s\n", arp_source_ip);
+      if(strcmp(arp_target_ip, src_ip) == 0){
+        if (ntohs(arppkt->ah.opcode) == ARP_REQUEST) {
+            printf("it is arp request\n");
+            /* send arp reply */
+            printf("send arp reply\n");
+            arp_reply(arppkt);
+        }
+        if (ntohs(arppkt->ah.opcode) == ARP_REPLY) {
+            printf("arp source mac:%02x:%02x:%02x:%02x:%02x:%02x\n", arppkt->eh.ether_shost[0], arppkt->eh.ether_shost[1], arppkt->eh.ether_shost[2], arppkt->eh.ether_shost[3], arppkt->eh.ether_shost[4], arppkt->eh.ether_shost[5]);
+            
+        }
+      }
     default:
       /* others */
       break;
@@ -158,12 +388,13 @@ void get_ether(const unsigned char *buffer) {
 
 }
 
+/*
 void receive_packets(void) {
     char *src, *dst;
     uint16_t *spkt, *dpkt;
     fd = open("/dev/netmap", O_RDWR);
     bzero(&nmr, sizeof(nmr));
-    strcpy(nmr.nr_name, "eth1");
+    strcpy(nmr.nr_name, "eth6");
     nmr.nr_version = NETMAP_API;
     ioctl(fd, NIOCREGIF, &nmr);
     void *p = mmap(0, nmr.nr_memsize, PROT_WRITE | PROT_READ, MAP_SHARED, fd, 0);
@@ -186,10 +417,44 @@ void receive_packets(void) {
     }
   close(fd);
 }
+*/
 
+static void
+sigint_h(int sig)
+{
+    (void)sig;  /* UNUSED */
+    do_abort = 1;
+    nm_close(d);
+    printf("file closed\n");
+    signal(SIGINT, SIG_DFL);
+}
 
-int main() {
-	//source_hwaddr("netmap:eth1");
-	receive_packets();
-	return 0;
+int main()
+{
+     char *buf;
+     struct nm_pkthdr h;
+     struct nmreq base_req;
+     char *src, *dst;
+     uint16_t *spkt, *dpkt;
+     memset(&base_req, 0, sizeof(base_req));
+     base_req.nr_flags |= NR_ACCEPT_VNET_HDR;
+     d = nm_open("netmap:eth6", &base_req, 0, 0);
+     fds.fd = NETMAP_FD(d);
+     fds.events = POLLIN;
+     receive_ring = NETMAP_RXRING(d->nifp, 0);
+     send_ring = NETMAP_TXRING(d->nifp, 0);
+     int r, s, i;
+    signal(SIGINT, sigint_h);
+    /* check arp functinality */
+    
+     while (do_abort) {
+        poll(&fds,  1, -1);
+        r = receive_ring->cur;
+        length = receive_ring->slot[r].len;
+        src = NETMAP_BUF(receive_ring, receive_ring->slot[r].buf_idx);
+        get_ether(src);
+        receive_ring->cur = nm_ring_next(receive_ring, r);
+        receive_ring->head = receive_ring->cur;
+     }
+    nm_close(d);
 }
