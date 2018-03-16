@@ -7,7 +7,7 @@
 #include <net/ethernet.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
-
+#include <netinet/tcp.h>
 #include <inttypes.h>
 #include <netinet/in.h>
 
@@ -22,8 +22,8 @@ struct nmreq nmr;
 struct pollfd fds;
 int fd, length;
 
-const char *dst_ip = "169.254.9.8";
-const char *src_ip = "169.254.9.13";
+const char *dst_ip = "169.254.78.236";
+const char *src_ip = "169.254.18.80";
 const char *dst_mac = "00:aa:bb:cc:dd:03";
 const char *src_mac = "00:aa:bb:cc:dd:04";
 int do_abort = 1;
@@ -304,7 +304,7 @@ void send_udp_packet(const unsigned char *buffer, struct ip *iph, struct ether_a
   //p = ether_aton_dst(dst_mac);
   s = ether_aton_src(src_mac);
   change_dst_mac(&ethh, &dest_mac);
-  //change_src_mac(&ethh, s);
+  change_src_mac(&ethh, s);
   printf("changed dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_dhost[0], ethh->ether_dhost[1], ethh->ether_dhost[2], ethh->ether_dhost[3], ethh->ether_dhost[4], ethh->ether_dhost[5]);
 
   struct ip *ipd = (struct ip *)(ethh + 1);
@@ -324,13 +324,47 @@ void send_udp_packet(const unsigned char *buffer, struct ip *iph, struct ether_a
   ipd->ip_sum = wrapsum(checksum(ipd, sizeof(*ipd), 0));
 
   //printf("ip checksum after:%x\n", ipd->ip_sum);
+  /* udp checksum disable */
   udp->uh_sum=0;
   send_ring->cur = nm_ring_next(send_ring, send_ring->cur);
   send_ring->head = send_ring->cur;
   ioctl(fds.fd, NIOCTXSYNC, NULL);
 }
 
-
+uint16_t tcp_checksum(const void *buff, size_t len, in_addr_t src_addr, in_addr_t dest_addr) {
+         const uint16_t *buf=buff;
+         uint16_t *ip_src=(void *)&src_addr, *ip_dst=(void *)&dest_addr;
+         uint32_t sum;
+         size_t length=len;
+ 
+         // Calculate the sum                                            //
+         sum = 0;
+         while (len > 1)
+         {
+                 sum += *buf++;
+                 if (sum & 0x80000000)
+                         sum = (sum & 0xFFFF) + (sum >> 16);
+                 len -= 2;
+         }
+ 
+         if ( len & 1 )
+                 // Add the padding if the packet lenght is odd          //
+                 sum += *((uint8_t *)buf);
+ 
+         // Add the pseudo-header                                        //
+         sum += *(ip_src++);
+         sum += *ip_src;
+         sum += *(ip_dst++);
+         sum += *ip_dst;
+         sum += htons(IPPROTO_TCP);
+         sum += htons(length);
+ 
+         // Add the carries                                              //
+         while (sum >> 16)
+                 sum = (sum & 0xFFFF) + (sum >> 16);
+         // Return the one's complement of sum                           //
+         return ( (uint16_t)(~sum)  );
+}
 /*
  * Rewrites destination mac address and ip address and send the packet
  */
@@ -351,7 +385,7 @@ void send_tcp_packet(const unsigned char *buffer, struct ip *iph) {
   printf("changed dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_dhost[0], ethh->ether_dhost[1], ethh->ether_dhost[2], ethh->ether_dhost[3], ethh->ether_dhost[4], ethh->ether_dhost[5]);
 
   struct ip *ipd = (struct ip *)(ethh + 1);
-  //struct udphdr *udp = (struct udphdr *)(ipd + 1);
+  struct tcphdr *tcp = (struct tcphdr *)(ipd + 1);
   /*copy dst ip to packet ip*/
   inet_pton(AF_INET, dst_ip, &(ipd->ip_dst));
 
@@ -367,7 +401,13 @@ void send_tcp_packet(const unsigned char *buffer, struct ip *iph) {
   ipd->ip_sum = wrapsum(checksum(ipd, sizeof(*ipd), 0));
 
   //printf("ip checksum after:%x\n", ipd->ip_sum);
-  //udp->uh_sum=0;
+  //tcp checksum
+  printf("tcp checksum before:%x\n", tcp->th_sum);
+  tcp->th_sum = 0;
+  printf("ip len %d:\n",ntohs(ipd->ip_len));
+  //tcp->th_sum = tcp_checksum(tcp, (ipd->ip_len- 4*ipd->ip_hl), ipd->ip_src.s_addr, ipd->ip_dst.s_addr);
+  tcp->th_sum = tcp_checksum(tcp, (ntohs(ipd->ip_len) -4*ipd->ip_hl), ipd->ip_src.s_addr, ipd->ip_dst.s_addr);
+  printf("tcp checksum after:%x\n", tcp->th_sum);
   send_ring->cur = nm_ring_next(send_ring, send_ring->cur);
   send_ring->head = send_ring->cur;
   ioctl(fds.fd, NIOCTXSYNC, NULL);
