@@ -24,7 +24,7 @@ struct pollfd fds;
 int fd, length;
 
 const char *backend_pool_array[2] = {"169.254.9.23", "169.254.78.236"};
-const char *backend_mac_array[2] = { "00:aa:bb:cc:dd:06", "00:aa:bb:cc:dd:03"};
+//const char *backend_mac_array[2] = { "00:aa:bb:cc:dd:06", "00:aa:bb:cc:dd:03"};
 const char *dst_ip = "169.254.78.236";
 const char *src_ip = "169.254.18.80";
 //const char *dst_mac = "00:aa:bb:cc:dd:03";
