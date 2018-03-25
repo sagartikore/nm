@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
+#include <netinet/udp.h>
 #include <arpa/inet.h>
 #include <cstdlib>
 #include<netinet/if_ether.h>
@@ -15,7 +16,7 @@
 #include<iostream>
 using namespace std;
 string load_balancer_ip = "169.254.18.80";
-#define BACKEND_SERVERS 2
+#define BACKEND_SERVERS 1
 #define TCP 6
 #define UDP 17
 string backend_pool_array[2] = {"169.254.78.236", "169.254.9.23"};
@@ -48,14 +49,86 @@ uint16_t tcp_checksum(const void *buff, size_t len, in_addr_t src_addr, in_addr_
     return ( (uint16_t)(~sum)  );
 }
 
+/* Rewrrite destination ip, recalculate tcp checksum and send
+ * the packet
+ */
+void send_tcp_packet(int sock_s, struct iphdr *ip, struct tcphdr *tcp) {
+    unsigned short iphdrlen = ip->ihl*4;
+    int tcplen = ntohs(ip->tot_len) - iphdrlen;
+
+    //struct tcphdr *tcp = (struct tcphdr *)(ip + iphdrlen);
+    int index;
+    struct sockaddr_in sin;
+    sin.sin_family = AF_INET;
+    sin.sin_port = tcp->dest;
+    cout << htons(tcp->dest) << endl;
+    /* select backend server */
+    index = ntohs(tcp->source) % BACKEND_SERVERS;
+    sin.sin_addr.s_addr = inet_addr (backend_pool_array[index].c_str());
+    //set destination ip
+    ip->daddr = sin.sin_addr.s_addr;
+    cout << "ip addr" << inet_ntoa(sin.sin_addr) << endl;
+    tcp->check = 0;
+    tcp->check = tcp_checksum(tcp, tcplen, ip->saddr, ip->daddr);
+    int one = 1;
+    const int *val = &one;
+    /* since we already added ip header to our packet,
+     * enabling 'ip_hdrincl' option tells kernel not to add ip header
+     * */
+    if (setsockopt (sock_s, IPPROTO_IP, IP_HDRINCL, val, sizeof (one)) < 0)
+        printf ("Warning: Cannot set HDRINCL!\n");
+
+    if (sendto (sock_s,        /* our socket */
+                ip, /* the buffer containing headers and data */
+                ntohs(ip->tot_len),  /* total length of packet */
+                0,        /* routing flags, normally always 0 */
+                (struct sockaddr *) &sin, /* socket addr, just like in */
+                sizeof (sin)) < 0)        /* a normal send() */
+        printf ("error\n");
+}
+
+/* Rewrrite destination ip and send
+ * the packet
+ */
+void send_udp_packet(int sock_s, struct iphdr *ip, struct udphdr *udp) {
+    //struct udphdr *udp = (struct udphdr *)(ip + iphdrlen);
+    int index;
+    struct sockaddr_in sin;
+    sin.sin_family = AF_INET;
+    sin.sin_port = udp->dest;
+    /* select backend server */
+    index = ntohs(udp->source) % 1;
+    sin.sin_addr.s_addr = inet_addr (backend_pool_array[index].c_str());
+    //set destination ip
+    ip->daddr = sin.sin_addr.s_addr;
+    udp->check = 0;
+    int one = 1;
+    const int *val = &one;
+    /* since we already added ip header to our packet,
+     * enabling 'ip_hdrincl' option tells kernel not to add ip header
+     * */
+    if (setsockopt (sock_s, IPPROTO_IP, IP_HDRINCL, val, sizeof (one)) < 0)
+        printf ("Warning: Cannot set HDRINCL!\n");
+
+    if (sendto (sock_s,        /* our socket */
+                ip, /* the buffer containing headers and data */
+                ntohs(ip->tot_len),  /* total length of packet */
+                0,        /* routing flags, normally always 0 */
+                (struct sockaddr *) &sin, /* socket addr, just like in */
+                sizeof (sin)) < 0)        /* a normal send() */
+        printf ("error\n");
+}
+
+
 int main(int argc, char *argv[]){
     int sock_r, sock_s;
-    unsigned short iphdrlen;
-    struct sockaddr_in src, dest;
+    struct sockaddr_in dest;
     struct sockaddr saddr;
     int saddr_len = sizeof (saddr);
     int buflen;
-
+    struct tcphdr *tcp;
+    struct udphdr *udp;
+    unsigned short iphdrlen;
     sock_r=socket(AF_PACKET,SOCK_RAW,htons(ETH_P_ALL));
     //sock_r=socket(AF_PACKET,SOCK_RAW,IPPROTO_TCP);
 
@@ -78,9 +151,6 @@ int main(int argc, char *argv[]){
     //struct ethhdr *eth = (struct ethhdr *)(buffer);
     struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
     memset(&dest, 0, sizeof(dest));
-    uint32_t src_addr,dst_addr;
-    uint16_t src_port,dst_port;
-    int index;
     while(1){
         /* receive packets*/
         buflen=recvfrom(sock_r,buffer,128,0,&saddr,(socklen_t *)&saddr_len);
@@ -89,51 +159,25 @@ int main(int argc, char *argv[]){
             printf("error in reading recvfrom function\n");
             return -1;
         }
-
         dest.sin_addr.s_addr = ip->daddr;
         string dst_addr_str = inet_ntoa(dest.sin_addr);
-        src_addr = ip->saddr;
-        dst_addr = ip->daddr;
-        /* getting actual size of IP header*/
         iphdrlen = ip->ihl*4;
-        struct tcphdr *tcp=(struct tcphdr*)(buffer + iphdrlen + sizeof(struct ethhdr));
-        src_port = tcp->source;
-        dst_port = tcp->dest;
         if(dst_addr_str.compare(load_balancer_ip)==0){
             /* distribute packets for only TCP */
             if (ip->protocol == TCP) {
-                /* open raw socket to send packets to backend */
+                tcp = (struct tcphdr*)(buffer + iphdrlen + sizeof(struct ethhdr));
+                /* opens raw socket and send tcp packets to backend */
                 sock_s = socket (PF_INET, SOCK_RAW, IPPROTO_TCP);
-                struct sockaddr_in sin;
-                sin.sin_family = AF_INET;
-                sin.sin_port = tcp->dest;
-                /* select backend server */
-                index = ntohs(tcp->source) % BACKEND_SERVERS;
-                sin.sin_addr.s_addr = inet_addr (backend_pool_array[index].c_str());
-                //set destination ip
-                ip->daddr = sin.sin_addr.s_addr;
-                tcp->check = 0;
-                tcp->check = tcp_checksum(tcp, (ntohs(ip->tot_len) -iphdrlen), ip->saddr, ip->daddr);
-                int one = 1;
-                const int *val = &one;
-                /* since we already added ip header to our packet,
-                 * enabling 'ip_hdrincl' option tells kernel not to add ip header
-                 * */
-                if (setsockopt (sock_s, IPPROTO_IP, IP_HDRINCL, val, sizeof (one)) < 0)
-                    printf ("Warning: Cannot set HDRINCL!\n");
-
-                if (sendto (sock_s,        /* our socket */
-                            ip, /* the buffer containing headers and data */
-                            ntohs(ip->tot_len),  /* total length of packet */
-                            0,        /* routing flags, normally always 0 */
-                            (struct sockaddr *) &sin, /* socket addr, just like in */
-                            sizeof (sin)) < 0)        /* a normal send() */
-                    printf ("error\n");
-                else
-                    printf (".");
+                send_tcp_packet(sock_s, ip, tcp);
+                close(sock_s);
+            }
+            else if(ip->protocol == UDP) {
+                udp = (struct udphdr*)(buffer + iphdrlen + sizeof(struct ethhdr));
+                sock_s = socket(PF_INET, SOCK_RAW, IPPROTO_UDP);
+                send_udp_packet(sock_s, ip, udp);
                 close(sock_s);
             }
         }
     }
-    return 0;
+  return 0;
 }
