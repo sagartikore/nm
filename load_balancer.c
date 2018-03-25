@@ -290,50 +290,6 @@ void arp_request(const uint32_t *dest_ip) {
     ioctl(fds.fd, NIOCTXSYNC, NULL);
 }
 
-
-/*
- * Rewrites destination mac address and ip address and send the packet
- */
-
-void send_udp_packet(const unsigned char *buffer, struct ip *iph, struct ether_addr dest_mac) {
-
-  unsigned  char *dst = NETMAP_BUF(send_ring, send_ring->slot[send_ring->cur].buf_idx);
-  struct ether_addr *p;
-  struct ether_addr *s;
-  nm_pkt_copy(buffer, dst, length);
-
-  /*rewrite destination mac and ip address */
-  struct ether_header *ethh = (struct ether_header *)dst;
-  //p = ether_aton_dst(dst_mac);
-  s = ether_aton_src(src_mac);
-  change_dst_mac(&ethh, &dest_mac);
-  change_src_mac(&ethh, s);
-  printf("changed dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_dhost[0], ethh->ether_dhost[1], ethh->ether_dhost[2], ethh->ether_dhost[3], ethh->ether_dhost[4], ethh->ether_dhost[5]);
-
-  struct ip *ipd = (struct ip *)(ethh + 1);
-  struct udphdr *udp = (struct udphdr *)(ipd + 1);
-  /*copy dst ip to packet ip*/
-  inet_pton(AF_INET, backend_pool_array[0], &(ipd->ip_dst));
-
-  /*probably packet is ready to send*/
-  char src_ip_str[INET_ADDRSTRLEN];
-  char dst_ip_str[INET_ADDRSTRLEN];
-  inet_ntop(AF_INET, &(ipd->ip_src), src_ip_str, INET_ADDRSTRLEN);
-  inet_ntop(AF_INET, &(ipd->ip_dst), dst_ip_str, INET_ADDRSTRLEN);
-  printf("changed source ip:%s\n", src_ip_str);
-  printf("changed Dest ip:%s\n", dst_ip_str);
-  //printf("ip checksum before:%x\n", ipd->ip_sum);
-  ipd->ip_sum = 0x0000;
-  ipd->ip_sum = wrapsum(checksum(ipd, sizeof(*ipd), 0));
-
-  //printf("ip checksum after:%x\n", ipd->ip_sum);
-  /* udp checksum disable */
-  udp->uh_sum=0;
-  send_ring->cur = nm_ring_next(send_ring, send_ring->cur);
-  send_ring->head = send_ring->cur;
-  ioctl(fds.fd, NIOCTXSYNC, NULL);
-}
-
 uint16_t tcp_checksum(const void *buff, size_t len, in_addr_t src_addr, in_addr_t dest_addr) {
          const uint16_t *buf=buff;
          uint16_t *ip_src=(void *)&src_addr, *ip_dst=(void *)&dest_addr;
@@ -362,6 +318,81 @@ uint16_t tcp_checksum(const void *buff, size_t len, in_addr_t src_addr, in_addr_
                  sum = (sum & 0xFFFF) + (sum >> 16);                          
          return ( (uint16_t)(~sum)  );
 }
+
+/*
+ * Rewrites destination mac address and ip address and send the packet
+ */
+
+void send_udp_packet(const unsigned char *buffer, struct ip *iph) {
+
+  unsigned  char *dst = NETMAP_BUF(send_ring, send_ring->slot[send_ring->cur].buf_idx);
+  struct ether_addr *p;
+  struct ether_addr *s;
+  nm_pkt_copy(buffer, dst, length);
+  struct ether_header *ethh = (struct ether_header *)dst;
+  struct ip *ipd = (struct ip *)(ethh + 1);
+  struct udphdr *udp = (struct udphdr *)(ipd + 1);
+
+/* select backend from sport */
+  char *backend_ip;
+  printf("Client port is:%d\n", htons(udp->source));
+  int index = htons(udp->source) % 2;
+
+  /*copy dst ip to packet ip*/
+  inet_pton(AF_INET, backend_pool_array[index], &(ipd->ip_dst));
+
+  /*probably packet is ready to send*/
+  char src_ip_str[INET_ADDRSTRLEN];
+  char dst_ip_str[INET_ADDRSTRLEN];
+  inet_ntop(AF_INET, &(ipd->ip_src), src_ip_str, INET_ADDRSTRLEN);
+  inet_ntop(AF_INET, &(ipd->ip_dst), dst_ip_str, INET_ADDRSTRLEN);
+  printf("source ip:%s\n", src_ip_str);
+  printf("changed Dest ip:%s\n", dst_ip_str);
+
+
+  struct ether_addr backend_mac;
+  struct arp_cache_entry *entry;
+  // check if arp entry for destination mac is present
+  int i;
+  uint32_t dst_ip;
+  inet_pton(AF_INET, backend_pool_array[index], &(dst_ip));
+
+  for (i = 0; i < ARP_CACHE_LEN; i++) {
+      entry = &arp_cache[i];
+      if (entry->ip == dst_ip) {
+          //mac address exist
+          printf("MAC entry found for ip:%s \n", dst_ip_str);
+          backend_mac = entry->mac;
+          break;
+      }
+  }
+  if(i == ARP_CACHE_LEN) {
+      /* mac not in arp cache, send arp request to get destination mac */
+      printf("MAC entry not found for: %s sending ARP request\n", dst_ip_str);
+      arp_request(&dst_ip);
+      printf("This packet is not sent, it needs to be deferred\n");
+      return;
+  }
+
+
+  /*rewrite destination mac and ip address */
+  s = ether_aton_src(src_mac);
+  change_dst_mac(&ethh, &backend_mac);
+  change_src_mac(&ethh, s);
+  printf("changed dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_dhost[0], ethh->ether_dhost[1], ethh->ether_dhost[2], ethh->ether_dhost[3], ethh->ether_dhost[4], ethh->ether_dhost[5]);
+
+  //printf("ip checksum before:%x\n", ipd->ip_sum);
+  ipd->ip_sum = 0x0000;
+  ipd->ip_sum = wrapsum(checksum(ipd, sizeof(*ipd), 0));
+
+  //printf("ip checksum after:%x\n", ipd->ip_sum);
+  /* udp checksum disable */
+  udp->uh_sum=0;
+  send_ring->cur = nm_ring_next(send_ring, send_ring->cur);
+  send_ring->head = send_ring->cur;
+  ioctl(fds.fd, NIOCTXSYNC, NULL);
+}
+
 /*
  * Rewrites destination mac address and ip address and send the packet
  */
@@ -474,10 +505,8 @@ void process_ip_packet(const unsigned char *buffer, struct ip *iph) {
             arp_request(&source_ip);
             printf("This packet is not sent, it needs to be deferred\n");
         }
-        else {
-            //send packet
-            send_udp_packet(buffer, iph, dest_mac);
-        }
+        
+        send_udp_packet(buffer, iph);
         printf("##################################################################################\n");
        /*wait for arp reply */
 
