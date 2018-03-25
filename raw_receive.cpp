@@ -163,7 +163,7 @@ int main(int argc, char *argv[]){
         string dst_addr_str = inet_ntoa(dest.sin_addr);
         iphdrlen = ip->ihl*4;
         if(dst_addr_str.compare(load_balancer_ip)==0){
-            /* distribute packets for only TCP */
+            /* distribute packets to TCP backends */
             if (ip->protocol == TCP) {
                 tcp = (struct tcphdr*)(buffer + iphdrlen + sizeof(struct ethhdr));
                 /* opens raw socket and send tcp packets to backend */
@@ -171,6 +171,7 @@ int main(int argc, char *argv[]){
                 send_tcp_packet(sock_s, ip, tcp);
                 close(sock_s);
             }
+            /* distribute packets to UDP backends */
             else if(ip->protocol == UDP) {
                 udp = (struct udphdr*)(buffer + iphdrlen + sizeof(struct ethhdr));
                 sock_s = socket(PF_INET, SOCK_RAW, IPPROTO_UDP);
