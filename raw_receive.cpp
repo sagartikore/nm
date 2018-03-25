@@ -82,13 +82,13 @@ int main(int argc, char *argv[]){
     uint16_t src_port,dst_port;
     int index;
     while(1){
+        /* receive packets*/
         buflen=recvfrom(sock_r,buffer,128,0,&saddr,(socklen_t *)&saddr_len);
         if(buflen<0)
         {
             printf("error in reading recvfrom function\n");
             return -1;
         }
-        /* check transport layer protocol UDP or TCP */
 
         dest.sin_addr.s_addr = ip->daddr;
         string dst_addr_str = inet_ntoa(dest.sin_addr);
@@ -102,7 +102,8 @@ int main(int argc, char *argv[]){
         if(dst_addr_str.compare(load_balancer_ip)==0){
             /* distribute packets for only TCP */
             if (ip->protocol == TCP) {
-                sock_s = socket (PF_INET, SOCK_RAW, IPPROTO_TCP);  /* open raw socket */
+                /* open raw socket to send packets to backend */
+                sock_s = socket (PF_INET, SOCK_RAW, IPPROTO_TCP);
                 struct sockaddr_in sin;
                 sin.sin_family = AF_INET;
                 sin.sin_port = tcp->dest;
@@ -115,12 +116,15 @@ int main(int argc, char *argv[]){
                 tcp->check = tcp_checksum(tcp, (ntohs(ip->tot_len) -iphdrlen), ip->saddr, ip->daddr);
                 int one = 1;
                 const int *val = &one;
+                /* since we already added ip header to our packet,
+                 * enabling 'ip_hdrincl' option tells kernel not to add ip header
+                 * */
                 if (setsockopt (sock_s, IPPROTO_IP, IP_HDRINCL, val, sizeof (one)) < 0)
                     printf ("Warning: Cannot set HDRINCL!\n");
 
                 if (sendto (sock_s,        /* our socket */
                             ip, /* the buffer containing headers and data */
-                            ntohs(ip->tot_len),  /* total length of our datagram */
+                            ntohs(ip->tot_len),  /* total length of packet */
                             0,        /* routing flags, normally always 0 */
                             (struct sockaddr *) &sin, /* socket addr, just like in */
                             sizeof (sin)) < 0)        /* a normal send() */
