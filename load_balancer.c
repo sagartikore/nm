@@ -23,7 +23,7 @@ struct nmreq nmr;
 struct pollfd fds;
 int fd, length;
 
-const char *backend_pool_array[2] = {"169.254.9.23", "169.254.78.236"};
+const char *backend_pool_array[2] = {"169.254.78.236", "169.254.9.23"};
 //const char *backend_mac_array[2] = { "00:aa:bb:cc:dd:06", "00:aa:bb:cc:dd:03"};
 const char *dst_ip = "169.254.78.236";
 const char *src_ip = "169.254.18.80";
@@ -339,8 +339,6 @@ uint16_t tcp_checksum(const void *buff, size_t len, in_addr_t src_addr, in_addr_
          uint16_t *ip_src=(void *)&src_addr, *ip_dst=(void *)&dest_addr;
          uint32_t sum;
          size_t length=len;
- 
-         // Calculate the sum                                            //
          sum = 0;
          while (len > 1)
          {
@@ -351,10 +349,8 @@ uint16_t tcp_checksum(const void *buff, size_t len, in_addr_t src_addr, in_addr_
          }
  
          if ( len & 1 )
-                 // Add the padding if the packet lenght is odd          //
                  sum += *((uint8_t *)buf);
  
-         // Add the pseudo-header                                        //
          sum += *(ip_src++);
          sum += *ip_src;
          sum += *(ip_dst++);
@@ -362,10 +358,8 @@ uint16_t tcp_checksum(const void *buff, size_t len, in_addr_t src_addr, in_addr_
          sum += htons(IPPROTO_TCP);
          sum += htons(length);
  
-         // Add the carries                                              //
          while (sum >> 16)
-                 sum = (sum & 0xFFFF) + (sum >> 16);
-         // Return the one's complement of sum                           //
+                 sum = (sum & 0xFFFF) + (sum >> 16);                          
          return ( (uint16_t)(~sum)  );
 }
 /*
