@@ -15,6 +15,7 @@
 #define ARP_REQUEST 1
 #define ARP_REPLY 2
 #define ARP_CACHE_LEN 20
+#define BACKEND_SERVERS 1
 
 struct netmap_if *nifp;
 struct netmap_ring *send_ring, *receive_ring;
@@ -73,14 +74,14 @@ void insert_arp_cache(uint32_t ip, struct ether_addr mac) {
         entry = &arp_cache[i];
         if (entry->ip == ip) {
             //entry already exist
-            printf("arp entry already exists\n");
+            //printf("arp entry already exists\n");
             return;
         }
         if (entry->ip == 0) {
             //make entry
             entry->ip = ip;
             entry->mac = mac;
-            printf("arp entry created\n");
+            //printf("arp entry created\n");
             //inet_pton(AF_INET, ip, &(ip_str));
             //printf("arp entry created for ip : %s\n", ip_str);
             return;
@@ -243,8 +244,8 @@ void prepare_arp_packet(struct arp_pkt *arp_pkt, const uint32_t *src_ip, const u
 
 
 void arp_reply(struct arp_pkt *arppkt) {
-    printf("###########################\n");
-    printf("sending arp reply\n");
+    //printf("###########################\n");
+    //printf("sending arp reply\n");
     unsigned  char *tx_buf = NETMAP_BUF(send_ring, send_ring->slot[send_ring->cur].buf_idx);
     struct netmap_slot *slot = &send_ring->slot[send_ring->cur];
     //struct arp_pkt *arp_reply = (struct arp_pkt *)(tx_buf - sizeof(struct ether_header));
@@ -259,17 +260,17 @@ void arp_reply(struct arp_pkt *arppkt) {
     send_ring->cur = nm_ring_next(send_ring, send_ring->cur);
     send_ring->head = send_ring->cur;
     ioctl(fds.fd, NIOCTXSYNC, NULL);
-    printf("arp source mac:%02x:%02x:%02x:%02x:%02x:%02x\n", arp_reply->eh.ether_shost[0], arp_reply->eh.ether_shost[1],
-          arp_reply->eh.ether_shost[2], arp_reply->eh.ether_shost[3], arp_reply->eh.ether_shost[4], arp_reply->eh.ether_shost[5]);
-    printf("arp dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", arp_reply->eh.ether_dhost[0], arp_reply->eh.ether_dhost[1],
-            arp_reply->eh.ether_dhost[2], arp_reply->eh.ether_dhost[3], arp_reply->eh.ether_dhost[4], arp_reply->eh.ether_dhost[5]);
+    //printf("arp source mac:%02x:%02x:%02x:%02x:%02x:%02x\n", arp_reply->eh.ether_shost[0], arp_reply->eh.ether_shost[1],
+    //      arp_reply->eh.ether_shost[2], arp_reply->eh.ether_shost[3], arp_reply->eh.ether_shost[4], arp_reply->eh.ether_shost[5]);
+    //printf("arp dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", arp_reply->eh.ether_dhost[0], arp_reply->eh.ether_dhost[1],
+    //        arp_reply->eh.ether_dhost[2], arp_reply->eh.ether_dhost[3], arp_reply->eh.ether_dhost[4], arp_reply->eh.ether_dhost[5]);
     char arp_src_ip[INET_ADDRSTRLEN];
     char arp_target_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &(arp_reply->ah.target_ip), arp_target_ip, INET_ADDRSTRLEN);
     inet_ntop(AF_INET, &(arp_reply->ah.sender_ip), arp_src_ip, INET_ADDRSTRLEN);
-    printf("arp target ip %s\n", arp_target_ip);
-    printf("arp source ip %s\n", arp_src_ip);
-    printf("#############################\n");
+    //printf("arp target ip %s\n", arp_target_ip);
+    //printf("arp source ip %s\n", arp_src_ip);
+    //printf("#############################\n");
 }
 
 void arp_request(const uint32_t *dest_ip) {
@@ -335,7 +336,7 @@ void send_udp_packet(const unsigned char *buffer, struct ip *iph) {
 
 /* select backend from sport */
   char *backend_ip;
-  printf("Client port is:%d\n", htons(udp->source));
+  //printf("Client port is:%d\n", htons(udp->source));
   int index = htons(udp->source) % 2;
 
   /*copy dst ip to packet ip*/
@@ -346,8 +347,8 @@ void send_udp_packet(const unsigned char *buffer, struct ip *iph) {
   char dst_ip_str[INET_ADDRSTRLEN];
   inet_ntop(AF_INET, &(ipd->ip_src), src_ip_str, INET_ADDRSTRLEN);
   inet_ntop(AF_INET, &(ipd->ip_dst), dst_ip_str, INET_ADDRSTRLEN);
-  printf("source ip:%s\n", src_ip_str);
-  printf("changed Dest ip:%s\n", dst_ip_str);
+  //printf("source ip:%s\n", src_ip_str);
+  //printf("changed Dest ip:%s\n", dst_ip_str);
 
 
   struct ether_addr backend_mac;
@@ -361,16 +362,16 @@ void send_udp_packet(const unsigned char *buffer, struct ip *iph) {
       entry = &arp_cache[i];
       if (entry->ip == dst_ip) {
           //mac address exist
-          printf("MAC entry found for ip:%s \n", dst_ip_str);
+          //printf("MAC entry found for ip:%s \n", dst_ip_str);
           backend_mac = entry->mac;
           break;
       }
   }
   if(i == ARP_CACHE_LEN) {
       /* mac not in arp cache, send arp request to get destination mac */
-      printf("MAC entry not found for: %s sending ARP request\n", dst_ip_str);
+      //printf("MAC entry not found for: %s sending ARP request\n", dst_ip_str);
       arp_request(&dst_ip);
-      printf("This packet is not sent, it needs to be deferred\n");
+      //printf("This packet is not sent, it needs to be deferred\n");
       return;
   }
 
@@ -379,7 +380,7 @@ void send_udp_packet(const unsigned char *buffer, struct ip *iph) {
   s = ether_aton_src(src_mac);
   change_dst_mac(&ethh, &backend_mac);
   change_src_mac(&ethh, s);
-  printf("changed dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_dhost[0], ethh->ether_dhost[1], ethh->ether_dhost[2], ethh->ether_dhost[3], ethh->ether_dhost[4], ethh->ether_dhost[5]);
+  //printf("changed dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_dhost[0], ethh->ether_dhost[1], ethh->ether_dhost[2], ethh->ether_dhost[3], ethh->ether_dhost[4], ethh->ether_dhost[5]);
 
   //printf("ip checksum before:%x\n", ipd->ip_sum);
   ipd->ip_sum = 0x0000;
@@ -410,8 +411,8 @@ void send_tcp_packet(const unsigned char *buffer, struct ip *iph) {
 
 /* select backend from sport */
   char *backend_ip;
-  printf("Client port is:%d\n", htons(tcp->source));
-  int index = htons(tcp->source) % 2;
+  //printf("Client port is:%d\n", htons(tcp->source));
+  int index = htons(tcp->source) % BACKEND_SERVERS;
 
   /*copy dst ip to packet ip*/
   inet_pton(AF_INET, backend_pool_array[index], &(ipd->ip_dst));
@@ -420,8 +421,8 @@ void send_tcp_packet(const unsigned char *buffer, struct ip *iph) {
   char dst_ip_str[INET_ADDRSTRLEN];
   inet_ntop(AF_INET, &(ipd->ip_src), src_ip_str, INET_ADDRSTRLEN);
   inet_ntop(AF_INET, &(ipd->ip_dst), dst_ip_str, INET_ADDRSTRLEN);
-  printf("changed source ip:%s\n", src_ip_str);
-  printf("changed Dest ip:%s\n", dst_ip_str);
+  //printf("changed source ip:%s\n", src_ip_str);
+  //printf("changed Dest ip:%s\n", dst_ip_str);
 
   /* Get mac of backend selected */
 
@@ -435,16 +436,16 @@ void send_tcp_packet(const unsigned char *buffer, struct ip *iph) {
       entry = &arp_cache[i];
       if (entry->ip == dst_ip) {
           //mac address exist
-          printf("MAC entry found for ip:%s \n", dst_ip_str);
+          //printf("MAC entry found for ip:%s \n", dst_ip_str);
           backend_mac = entry->mac;
           break;
       }
   }
   if(i == ARP_CACHE_LEN) {
       /* mac not in arp cache, send arp request to get destination mac */
-      printf("MAC entry not found for: %s sending ARP request\n", dst_ip_str);
+      //printf("MAC entry not found for: %s sending ARP request\n", dst_ip_str);
       arp_request(&dst_ip);
-      printf("This packet is not sent, it needs to be deferred\n");
+      //printf("This packet is not sent, it needs to be deferred\n");
       /* For now relying on TCP retransmission */
       return;
   }
@@ -453,7 +454,7 @@ void send_tcp_packet(const unsigned char *buffer, struct ip *iph) {
   s = ether_aton_src(src_mac);
   change_dst_mac(&ethh, &backend_mac);
   change_src_mac(&ethh, s);
-  printf("changed dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_dhost[0], ethh->ether_dhost[1], ethh->ether_dhost[2], ethh->ether_dhost[3], ethh->ether_dhost[4], ethh->ether_dhost[5]);
+  //printf("changed dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_dhost[0], ethh->ether_dhost[1], ethh->ether_dhost[2], ethh->ether_dhost[3], ethh->ether_dhost[4], ethh->ether_dhost[5]);
 
   /*probably packet is ready to send*/
   //printf("ip checksum before:%x\n", ipd->ip_sum);
@@ -473,14 +474,14 @@ void send_tcp_packet(const unsigned char *buffer, struct ip *iph) {
 
 
 void process_ip_packet(const unsigned char *buffer, struct ip *iph) {
-  printf("###########################################################################\n");
-  printf("packet received: IP packet\n");
+  //printf("###########################################################################\n");
+  //printf("packet received: IP packet\n");
   char src_ip_str[INET_ADDRSTRLEN];
   char dst_ip_str[INET_ADDRSTRLEN];
   inet_ntop(AF_INET, &(iph->ip_src), src_ip_str, INET_ADDRSTRLEN);
   inet_ntop(AF_INET, &(iph->ip_dst), dst_ip_str, INET_ADDRSTRLEN);
-  printf("source ip:%s\n", src_ip_str);
-  printf("Dest ip:%s\n", dst_ip_str);
+  //printf("source ip:%s\n", src_ip_str);
+  //printf("Dest ip:%s\n", dst_ip_str);
   uint32_t source_ip;
   char *arp_buffer;
   inet_pton(AF_INET, dst_ip, &(source_ip));
@@ -494,20 +495,20 @@ void process_ip_packet(const unsigned char *buffer, struct ip *iph) {
             entry = &arp_cache[i];
             if (entry->ip == source_ip) {
                 //mac address exist
-                printf("MAC entry found for ip:%s \n", dst_ip_str);
+                //printf("MAC entry found for ip:%s \n", dst_ip_str);
                 dest_mac = entry->mac;
                 break;
             }
         }
         if(i == ARP_CACHE_LEN) {
             /* mac not in arp cache, send arp request to get destination mac */
-            printf("MAC entry not found for:%s sending ARP request\n", dst_ip_str);
+            //printf("MAC entry not found for:%s sending ARP request\n", dst_ip_str);
             arp_request(&source_ip);
-            printf("This packet is not sent, it needs to be deferred\n");
+            //printf("This packet is not sent, it needs to be deferred\n");
         }
         
         send_udp_packet(buffer, iph);
-        printf("##################################################################################\n");
+        //printf("##################################################################################\n");
        /*wait for arp reply */
 
        /* poll(&fds,  1, -1);
@@ -532,14 +533,14 @@ void process_ip_packet(const unsigned char *buffer, struct ip *iph) {
         break;
 
     case IPPROTO_TCP:
-        printf("TCP packet\n");
+        //printf("TCP packet\n");
         send_tcp_packet(buffer, iph);
-        printf("##################################################################################\n");
+        //printf("##################################################################################\n");
 
       break;
     case IPPROTO_IPIP:
       /* tunneling */
-      printf("it is ipinip\n");
+      //printf("it is ipinip\n");
       break;
     default:
       // We return 0 to indicate that the packet couldn't be balanced.
@@ -552,7 +553,7 @@ void process_receive_buffer(const unsigned char *buffer) {
   //print src and dst mac
  // printf("source mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_shost[0], ethh->ether_shost[1], ethh->ether_shost[2], ethh->ether_shost[3], ethh->ether_shost[4], ethh->ether_shost[5]);
  // printf("dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_dhost[0], ethh->ether_dhost[1], ethh->ether_dhost[2], ethh->ether_dhost[3], ethh->ether_dhost[4], ethh->ether_dhost[5]);	
-
+struct arp_pkt *arppkt;
   switch (ntohs(ethh->ether_type)) {
     case ETHERTYPE_IP:
       process_ip_packet(buffer, (struct ip *)(ethh + 1));
@@ -565,9 +566,9 @@ void process_receive_buffer(const unsigned char *buffer) {
       break;
     case ETHERTYPE_ARP:
       /*ARP packet */
-      printf("##################################################################################\n");
-      printf("Packet received: ARP packet\n");
-      struct arp_pkt *arppkt = (struct arp_pkt *)buffer;
+     // printf("##################################################################################\n");
+     // printf("Packet received: ARP packet\n");
+      arppkt = (struct arp_pkt *)buffer;
       char arp_target_ip[INET_ADDRSTRLEN];
       char arp_sender_ip[INET_ADDRSTRLEN];
       inet_ntop(AF_INET, &(arppkt->ah.target_ip), arp_target_ip, INET_ADDRSTRLEN);
@@ -578,17 +579,17 @@ void process_receive_buffer(const unsigned char *buffer) {
       insert_arp_cache(arppkt->ah.sender_ip, sender_mac);
       if(strcmp(arp_target_ip, src_ip) == 0){
         if (ntohs(arppkt->ah.opcode) == ARP_REQUEST) {
-            printf("ARP REQUEST packet from: %s\n", arp_sender_ip);
+            //printf("ARP REQUEST packet from: %s\n", arp_sender_ip);
             /* send arp reply */
             arp_reply(arppkt);
         }
         if (ntohs(arppkt->ah.opcode) == ARP_REPLY) {
-            printf("ARP REPLY packet from: %s\n", arp_sender_ip);
-            printf("ARP REPLY sender mac:%02x:%02x:%02x:%02x:%02x:%02x\n", arppkt->eh.ether_shost[0], arppkt->eh.ether_shost[1],
-                    arppkt->eh.ether_shost[2], arppkt->eh.ether_shost[3], arppkt->eh.ether_shost[4], arppkt->eh.ether_shost[5]);
+            //printf("ARP REPLY packet from: %s\n", arp_sender_ip);
+            //printf("ARP REPLY sender mac:%02x:%02x:%02x:%02x:%02x:%02x\n", arppkt->eh.ether_shost[0], arppkt->eh.ether_shost[1],
+                //    arppkt->eh.ether_shost[2], arppkt->eh.ether_shost[3], arppkt->eh.ether_shost[4], arppkt->eh.ether_shost[5]);
         }
       }
-      printf("##################################################################################\n");
+      //printf("##################################################################################\n");
       break;
     default:
       /* others */

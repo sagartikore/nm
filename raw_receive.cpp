@@ -2,6 +2,7 @@
 
 
 #include <unistd.h>
+#include <errno.h>
 #include <stdio.h>
 #include <sys/socket.h>
 #include <netinet/ip.h>
@@ -61,13 +62,11 @@ void send_tcp_packet(int sock_s, struct iphdr *ip, struct tcphdr *tcp) {
     struct sockaddr_in sin;
     sin.sin_family = AF_INET;
     sin.sin_port = tcp->dest;
-    cout << htons(tcp->dest) << endl;
     /* select backend server */
     index = ntohs(tcp->source) % BACKEND_SERVERS;
     sin.sin_addr.s_addr = inet_addr (backend_pool_array[index].c_str());
     //set destination ip
     ip->daddr = sin.sin_addr.s_addr;
-    cout << "ip addr" << inet_ntoa(sin.sin_addr) << endl;
     tcp->check = 0;
     tcp->check = tcp_checksum(tcp, tcplen, ip->saddr, ip->daddr);
     int one = 1;
@@ -84,7 +83,13 @@ void send_tcp_packet(int sock_s, struct iphdr *ip, struct tcphdr *tcp) {
                 0,        /* routing flags, normally always 0 */
                 (struct sockaddr *) &sin, /* socket addr, just like in */
                 sizeof (sin)) < 0)        /* a normal send() */
-        printf ("error\n");
+    {
+        //printf ("error:%s\n", strerror(errno));
+        //exit(EXIT_FAILURE);
+    }
+    else{
+        //printf("sent\n");
+    }
 }
 
 /* Rewrrite destination ip and send
@@ -145,6 +150,7 @@ int main(int argc, char *argv[]){
         printf("failed\n");
         exit(EXIT_FAILURE);
     }*/
+    sock_s = socket (PF_INET, SOCK_RAW, IPPROTO_TCP);
 
     unsigned char *buffer = (unsigned char *) malloc(65536); //to receive data
     memset(buffer,0,65536);
@@ -153,7 +159,7 @@ int main(int argc, char *argv[]){
     memset(&dest, 0, sizeof(dest));
     while(1){
         /* receive packets*/
-        buflen=recvfrom(sock_r,buffer,128,0,&saddr,(socklen_t *)&saddr_len);
+        buflen=recvfrom(sock_r,buffer,65536,0,&saddr,(socklen_t *)&saddr_len);
         if(buflen<0)
         {
             printf("error in reading recvfrom function\n");
@@ -167,9 +173,8 @@ int main(int argc, char *argv[]){
             if (ip->protocol == TCP) {
                 tcp = (struct tcphdr*)(buffer + iphdrlen + sizeof(struct ethhdr));
                 /* opens raw socket and send tcp packets to backend */
-                sock_s = socket (PF_INET, SOCK_RAW, IPPROTO_TCP);
                 send_tcp_packet(sock_s, ip, tcp);
-                close(sock_s);
+                //close(sock_s);
             }
             /* distribute packets to UDP backends */
             else if(ip->protocol == UDP) {
@@ -180,5 +185,6 @@ int main(int argc, char *argv[]){
             }
         }
     }
+    close(sock_s);
   return 0;
 }
