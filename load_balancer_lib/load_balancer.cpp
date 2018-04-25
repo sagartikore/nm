@@ -12,6 +12,7 @@
 #include <inttypes.h>
 #include <netinet/in.h>
 #include "lib.h"
+#define BACKEND_SERVERS 1
 
 int lb_fd;
 int index1=0;
@@ -119,37 +120,36 @@ void send_tcp_packet1(int fd1, int len, void* request, char *buffer){
 inet_pton(AF_INET, buffer, &(ipd->ip_dst));
   char src_ip_str[INET_ADDRSTRLEN];
   char dst_ip_str[INET_ADDRSTRLEN];
-  inet_ntop(AF_INET, &(ipd->ip_src), src_ip_str, INET_ADDRSTRLEN);
-  inet_ntop(AF_INET, &(ipd->ip_dst), dst_ip_str, INET_ADDRSTRLEN);
-  printf("changed source ip:%s\n", src_ip_str);
-  printf("changed Dest ip:%s\n", dst_ip_str);
+ // inet_ntop(AF_INET, &(ipd->ip_src), src_ip_str, INET_ADDRSTRLEN);
+//  inet_ntop(AF_INET, &(ipd->ip_dst), dst_ip_str, INET_ADDRSTRLEN);
+  // printf("changed source ip:%s\n", src_ip_str);
+  // printf("changed Dest ip:%s\n", dst_ip_str);
 
   /* Get mac of backend selected */
 
   // check if arp entry for destination mac is present
   int i;
   string bck_ip = buffer;
-  cout << "bakend ip in app" << bck_ip << endl;
+  //cout << "bakend ip in app" << bck_ip << endl;
   int map_id = createClient(lb_fd, "169.254.18.80" ,bck_ip , 0, "tcp");
   
   
   /*rewrite destination mac  */
   
-  printf("changed dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_dhost[0], ethh->ether_dhost[1], ethh->ether_dhost[2], ethh->ether_dhost[3], ethh->ether_dhost[4], ethh->ether_dhost[5]);
 
   /*probably packet is ready to send*/
-  //printf("ip checksum before:%x\n", ipd->ip_sum);
+  //// printf("ip checksum before:%x\n", ipd->ip_sum);
   ipd->ip_sum = 0x0000;
   ipd->ip_sum = wrapsum(checksum(ipd, sizeof(*ipd), 0));
 
-  //printf("ip checksum after:%x\n",2 ipd->ip_sum);
+  //// printf("ip checksum after:%x\n",2 ipd->ip_sum);
   //tcp checksum
   tcp->th_sum = 0;
   //tcp->th_sum = tcp_checksum(tcp, (ipd->ip_len- 4*ipd->ip_hl), ipd->ip_src.s_addr, ipd->ip_dst.s_addr);
   tcp->th_sum = tcp_checksum(tcp, (ntohs(ipd->ip_len) -4*ipd->ip_hl), ipd->ip_src.s_addr, ipd->ip_dst.s_addr);
   //registerCallback(lb_fd, -1, "read", process_receive_buffer);
   sendData(lb_fd, map_id, dst, index1);
-  cout<<"return1"<<endl;
+  //cout<<"return1"<<endl;
   registerCallback(lb_fd, -1, "read", process_receive_buffer);
 }
 
@@ -160,6 +160,7 @@ void send_tcp_packet(const unsigned char *buffer, struct ip *iph,  void* request
   struct ether_addr *p;
   my_pool* buffer_request = static_cast<my_pool*>(request); 
   nm_pkt_copy(buffer, dst, length);
+  setSlotLen(length);
 	buffer_request->dst1 = dst;
   struct ether_header *ethh = (struct ether_header *)dst;
   struct ip *ipd = (struct ip *)(ethh + 1);
@@ -167,25 +168,25 @@ void send_tcp_packet(const unsigned char *buffer, struct ip *iph,  void* request
 
 /* select backend from sport */
   char *backend_ip;
-  printf("Client port is:%d\n", htons(tcp->source));
-  index1 = htons(tcp->source) % 1;
-   printf("index value: %d\n", index1);
+  // printf("Client port is:%d\n", htons(tcp->source));
+  index1 = htons(tcp->source) % BACKEND_SERVERS;
+   // printf("index value: %d\n", index1);
    getData(lb_fd, 0, index1, "local", send_tcp_packet1);
-    cout<<"return2"<<endl;
+    //cout<<"return2"<<endl;
   /*copy dst ip to packet ip*/
  }
  
 
 
 void process_ip_packet(const unsigned char *buffer, struct ip *iph,  void* request, int length) {
-  printf("###########################################################################\n");
-  printf("packet received: IP packet\n");
+  // printf("###########################################################################\n");
+  // // printf("packet received: IP packet\n");
   char src_ip_str[INET_ADDRSTRLEN];
   char dst_ip_str[INET_ADDRSTRLEN];
-  inet_ntop(AF_INET, &(iph->ip_src), src_ip_str, INET_ADDRSTRLEN);
-  inet_ntop(AF_INET, &(iph->ip_dst), dst_ip_str, INET_ADDRSTRLEN);
-  printf("source ip:%s\n", src_ip_str);
-  printf("Dest ip:%s\n", dst_ip_str);
+  //inet_ntop(AF_INET, &(iph->ip_src), src_ip_str, INET_ADDRSTRLEN);
+  //inet_ntop(AF_INET, &(iph->ip_dst), dst_ip_str, INET_ADDRSTRLEN);
+  // // printf("source ip:%s\n", src_ip_str);
+  // // printf("Dest ip:%s\n", dst_ip_str);
   uint32_t source_ip;
   char *arp_buffer;
   inet_pton(AF_INET, dst_ip, &(source_ip));
@@ -195,19 +196,19 @@ void process_ip_packet(const unsigned char *buffer, struct ip *iph,  void* reque
   switch (iph->ip_p) {
     case IPPROTO_UDP:
         // check if arp entry for destination mac is present
-        printf("##################################################################################\n");
+        // printf("##################################################################################\n");
       
         break;
 
     case IPPROTO_TCP:
-        printf("TCP packet\n");
+        // printf("TCP packet\n");
         send_tcp_packet(buffer, iph, request, length);
-        printf("##################################################################################\n");
+        // printf("##################################################################################\n");
 
       break;
     case IPPROTO_IPIP:
       /* tunneling */
-      printf("it is ipinip\n");
+      // printf("it is ipinip\n");
       break;
     default:
       // We return 0 to indicate that the packet couldn't be balanced.
@@ -221,26 +222,26 @@ void process_receive_buffer(int fd1, int len, void* request, char *buffer) {
   my_pool* buf_req = static_cast<my_pool*>(request); 
   //buf_req->buf_val = buffer;
   //print src and dst mac
- // printf("source mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_shost[0], ethh->ether_shost[1], ethh->ether_shost[2], ethh->ether_shost[3], ethh->ether_shost[4], ethh->ether_shost[5]);
- // printf("dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_dhost[0], ethh->ether_dhost[1], ethh->ether_dhost[2], ethh->ether_dhost[3], ethh->ether_dhost[4], ethh->ether_dhost[5]);	
+ // // printf("source mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_shost[0], ethh->ether_shost[1], ethh->ether_shost[2], ethh->ether_shost[3], ethh->ether_shost[4], ethh->ether_shost[5]);
+ // // printf("dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_dhost[0], ethh->ether_dhost[1], ethh->ether_dhost[2], ethh->ether_dhost[3], ethh->ether_dhost[4], ethh->ether_dhost[5]);	
   
   switch (ntohs(ethh->ether_type)) {
     case ETHERTYPE_IP:
       process_ip_packet(buffer, (struct ip *)(ethh + 1), request, len);
       break;
     case ETHERTYPE_IPV6:
-      printf("packet received: IPV6 packet\n");
+      // printf("packet received: IPV6 packet\n");
       break;
     case ETHERTYPE_VLAN:
-      printf("vlan\n");
+      // printf("vlan\n");
       break;
     case ETHERTYPE_ARP:
       /*ARP packet */
-      printf("##################################################################################\n");
-      printf("Packet received: ARP packet\n");
+      // printf("##################################################################################\n");
+      // printf("Packet received: ARP packet\n");
      
       handle_arp_packet(buffer);
-      printf("##################################################################################\n");
+      // printf("##################################################################################\n");
       break;
     default:
       /* others */
@@ -270,9 +271,9 @@ void receive_packets(void) {
       i = ring->cur;
       length = ring->slot[i].len;
       src = NETMAP_BUF(ring, ring->slot[i].buf_idx);
-      printf("############################# packet received ###########################\n");
+      // printf("############################# packet received ###########################\n");
       get_ether(src);
-      printf("############################# packet sent #################################\n\n\n");
+      // printf("############################# packet sent #################################\n\n\n");
       ring->cur = nm_ring_next(ring, i);
       ring->head = ring->cur;
     }

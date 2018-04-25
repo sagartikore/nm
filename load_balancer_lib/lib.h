@@ -69,6 +69,7 @@ void addReqCtxt(int connID, int id, void* requestObj);
 void* getRefPtr(int id, void* pkt_mem_ptr);
 void removeRefPtr(int id, void* pkt_mem_ptr);
 char* writePktmem(int id);
+void setSlotLen(int len);
 void* getDSptr(int ds_key);
 void removeDSptr(int ds_key);
 void SignalHandler(int signum);

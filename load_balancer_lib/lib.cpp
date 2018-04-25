@@ -9,6 +9,7 @@ int do_abort = 1;
 const char *src_ip = "169.254.18.80";
 const char *src_ip1;// = "169.254.18.80";
 const char *src_mac = "00:aa:bb:cc:dd:04";
+struct ether_addr *src_byte;
 char* backend_mac_pool[2] = {"00:aa:bb:cc:dd:03", "00:aa:bb:cc:dd:06"};
 unordered_map<int, fn> funct_ptr;
 unordered_map<int, string> conn_map;
@@ -81,7 +82,7 @@ void free_ds_pool(){
     {
 	gotds = local_list.find(item);
                 if(got_ds == local_list.end()){
-		     //   std::cout << "[" << item->num << "] ";
+		     //   //////std::cout << "[" << item->num << "] ";
 			key = cache_void_list[item];	
 			cache_void_list.erase(item);
 			cache_list.erase(key);
@@ -200,13 +201,13 @@ void insert_arp_cache(uint32_t ip, struct ether_addr mac) {
     for(i = 0; i < ARP_CACHE_LEN; i++) {
         entry = &arp_cache[i];
         if (entry->ip == ip) {
-            printf("arp entry already exists\n");
+            // // printf("arp entry already exists\n");
             return;
         }
         if (entry->ip == 0) {
             entry->ip = ip;
             entry->mac = mac;
-            printf("arp entry created\n");
+            // // printf("arp entry created\n");
             return;
 
         }
@@ -266,8 +267,8 @@ void prepare_arp_packet(struct arp_pkt *arp_pkt, const uint32_t *src_ip, const u
 
 
 void arp_reply(struct arp_pkt *arppkt) {
-    printf("###########################\n");
-    printf("sending arp reply\n");
+    // printf("###########################\n");
+    // printf("sending arp reply\n");
     unsigned  char *tx_buf = NETMAP_BUF(send_ring, send_ring->slot[send_ring->cur].buf_idx);
     struct netmap_slot *slot = &send_ring->slot[send_ring->cur];
     //struct arp_pkt *arp_reply = (struct arp_pkt *)(tx_buf - sizeof(struct ether_header));
@@ -282,17 +283,17 @@ void arp_reply(struct arp_pkt *arppkt) {
     send_ring->cur = nm_ring_next(send_ring, send_ring->cur);
     send_ring->head = send_ring->cur;
     ioctl(fds.fd, NIOCTXSYNC, NULL);
-    printf("arp source mac:%02x:%02x:%02x:%02x:%02x:%02x\n", arp_reply->eh.ether_shost[0], arp_reply->eh.ether_shost[1],
-          arp_reply->eh.ether_shost[2], arp_reply->eh.ether_shost[3], arp_reply->eh.ether_shost[4], arp_reply->eh.ether_shost[5]);
-    printf("arp dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", arp_reply->eh.ether_dhost[0], arp_reply->eh.ether_dhost[1],
-            arp_reply->eh.ether_dhost[2], arp_reply->eh.ether_dhost[3], arp_reply->eh.ether_dhost[4], arp_reply->eh.ether_dhost[5]);
+    // printf("arp source mac:%02x:%02x:%02x:%02x:%02x:%02x\n", arp_reply->eh.ether_shost[0], arp_reply->eh.ether_shost[1],
+     //     arp_reply->eh.ether_shost[2], arp_reply->eh.ether_shost[3], arp_reply->eh.ether_shost[4], arp_reply->eh.ether_shost[5]);
+    // printf("arp dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", arp_reply->eh.ether_dhost[0], arp_reply->eh.ether_dhost[1],
+        //    arp_reply->eh.ether_dhost[2], arp_reply->eh.ether_dhost[3], arp_reply->eh.ether_dhost[4], arp_reply->eh.ether_dhost[5]);
     char arp_src_ip[INET_ADDRSTRLEN];
     char arp_target_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &(arp_reply->ah.target_ip), arp_target_ip, INET_ADDRSTRLEN);
     inet_ntop(AF_INET, &(arp_reply->ah.sender_ip), arp_src_ip, INET_ADDRSTRLEN);
-    printf("arp target ip %s\n", arp_target_ip);
-    printf("arp source ip %s\n", arp_src_ip);
-    printf("#############################\n");
+    // printf("arp target ip %s\n", arp_target_ip);
+    // printf("arp source ip %s\n", arp_src_ip);
+    // printf("#############################\n");
 }
 
 void arp_request(const uint32_t *dest_ip) {
@@ -324,20 +325,20 @@ void handle_arp_packet(char* buffer){
       
       memcpy(&sender_mac, (struct ether_addr *)arppkt->ah.sender_mac, 6);
       insert_arp_cache(arppkt->ah.sender_ip, sender_mac);
-      printf("after insert:%s\n", src_ip1);
+      // printf("after insert:%s\n", src_ip1);
       
       if(strcmp(arp_target_ip, src_ip) == 0){
-      	printf("matched\n");
-      	printf("arp code:%d\n", arppkt->ah.opcode);
+      	// printf("matched\n");
+      	// printf("arp code:%d\n", arppkt->ah.opcode);
         if (ntohs(arppkt->ah.opcode) == ARP_REQUEST) {
-            printf("ARP REQUEST packet from: %s\n", arp_sender_ip);
+            // printf("ARP REQUEST packet from: %s\n", arp_sender_ip);
             /* send arp reply */
             arp_reply(arppkt);
         }
         if (ntohs(arppkt->ah.opcode) == ARP_REPLY) {
-            printf("ARP REPLY packet from: %s\n", arp_sender_ip);
-            printf("ARP REPLY sender mac:%02x:%02x:%02x:%02x:%02x:%02x\n", arppkt->eh.ether_shost[0], arppkt->eh.ether_shost[1],
-                    arppkt->eh.ether_shost[2], arppkt->eh.ether_shost[3], arppkt->eh.ether_shost[4], arppkt->eh.ether_shost[5]);
+            // printf("ARP REPLY packet from: %s\n", arp_sender_ip);
+            // printf("ARP REPLY sender mac:%02x:%02x:%02x:%02x:%02x:%02x\n", arppkt->eh.ether_shost[0], arppkt->eh.ether_shost[1],
+              //      arppkt->eh.ether_shost[2], arppkt->eh.ether_shost[3], arppkt->eh.ether_shost[4], arppkt->eh.ether_shost[5]);
         }
       }
 }
@@ -345,6 +346,11 @@ char* writePktmem(int id){
 	char *dst = NETMAP_BUF(send_ring, send_ring->slot[send_ring->cur].buf_idx);
 	return dst;
 }
+void setSlotLen(int length) {
+  //////std::cout << "slot len" << length << std::endl;
+  send_ring->slot[send_ring->cur].len = length;
+}
+
 int createClient(int id, string local_ip , string remoteServerIP, int remoteServerPort, string protocol){
 	//netmap fd passed instaed of id
 	map_index = map_index + 1; 
@@ -353,39 +359,47 @@ int createClient(int id, string local_ip , string remoteServerIP, int remoteServ
 	return map_index;
 }
 void sendData(int connID, int id, char* packetToSend, int size){
-	struct ether_addr *s;
+	//struct ether_addr *s;
 	struct ether_header *ethh = (struct ether_header *)packetToSend;
-	s = ether_aton_src(src_mac);
+	//s = ether_aton_src(src_mac);
 	struct ether_addr backend_mac;
   	struct arp_cache_entry *entry;
   	int i;
   	uint32_t dst_ip;
  	inet_pton(AF_INET, (conn_map[id]).c_str(), &(dst_ip));
-	cout << "backend ip in lib " << conn_map[id] << endl;
+	//cout << "backend ip in lib " << conn_map[id] << endl;
   	for (i = 0; i < ARP_CACHE_LEN; i++) {
       	entry = &arp_cache[i];
       	if (entry->ip == dst_ip ) {
           //mac address exist
-         // printf("MAC entry found for ip:%s \n", dst_ip_str);
+         // // printf("MAC entry found for ip:%s \n", dst_ip_str);
           backend_mac = entry->mac;
           break;
       	}
       }
       if(i == ARP_CACHE_LEN) {
       	// mac not in arp cache, send arp request to get destination mac //
-      	//printf("MAC entry not found for: %s sending ARP request\n", dst_ip_str);
-      	arp_request(&dst_ip);
-      	printf("This packet is not sent, it needs to be deferred\n");
-      	// For now relying on TCP retransmission
-      	return;
+        //// printf("MAC entry not found for: %s sending ARP request\n", dst_ip_str);
+        arp_request(&dst_ip);
+        // printf("This packet is not sent, it needs to be deferred\n");
+        // For now relying on TCP retransmission
+        return;
       }
       //backend_mac = *ether_aton_dst(backend_mac_pool[size]); //TODO priya use something else instead of size
-	//conn_map.erase(id);
-  	change_dst_mac(&ethh, &backend_mac);
-  	change_src_mac(&ethh, s);
-	send_ring->cur = nm_ring_next(send_ring, send_ring->cur);
-  	send_ring->head = send_ring->cur;
-  	ioctl(connID, NIOCTXSYNC, NULL);
+  //conn_map.erase(id);
+    change_dst_mac(&ethh, &backend_mac);
+    change_src_mac(&ethh, src_byte);
+    // printf("changed dst mac:%02x:%02x:%02x:%02x:%02x:%02x\n", ethh->ether_dhost[0], ethh->ether_dhost[1], ethh->ether_dhost[2], ethh->ether_dhost[3], ethh->ether_dhost[4], ethh->ether_dhost[5]);
+  send_ring->cur = nm_ring_next(send_ring, send_ring->cur);
+    //send_ring->head = send_ring->cur;
+    //ioctl(connID, NIOCTXSYNC, NULL);
+}
+
+void send_batch() {
+  send_ring->head = send_ring->cur;
+    //std::cout << "T.Head: " << send_ring->head << std::endl;
+    //std::cout << "T.Tail: " << send_ring->tail << std::endl<< std::endl;
+    ioctl(fds.fd, NIOCTXSYNC, NULL);
 }
 static void
 sigint_h(int sig)
@@ -393,7 +407,7 @@ sigint_h(int sig)
     (void)sig;  /* UNUSED */
     do_abort = 1;
     nm_close(lib_netmap_desc);
-    printf("file closed\n");
+    // // printf("file closed\n");
     signal(SIGINT, SIG_DFL);
 }
 int createServer(string inter_face, string server_ip, int server_port, string protocol){
@@ -457,20 +471,29 @@ void startEventLoop(){
         storage4.add_block(&mp_v4.front(), mp_v4.size(), memory_size[3]);  //uncomment nov22
         }
     //
-   
+
+  // set source mac
+      src_byte = ether_aton_src(src_mac);
+   int n, rx;
+   int cur = receive_ring->cur;
     while (do_abort) {
-        poll(&fds,  1, -1);
-        r = receive_ring->cur;
-        length = receive_ring->slot[r].len;
-        src = NETMAP_BUF(receive_ring, receive_ring->slot[r].buf_idx);
-        fn_ptr = funct_ptr[my_fd];
-        mem_ptr[my_fd] = NULL; //memory for request object
-        fn_ptr(my_fd, length, NULL, src); //length pass instead of id
-        //process_receive_buffer(src);
-        receive_ring->cur = nm_ring_next(receive_ring, r);
-        receive_ring->head = receive_ring->cur;
+        poll(&fds,  1, -1); 
+        n = nm_ring_space(receive_ring);
+        for(rx = 0; rx < n; rx++) {
+          struct netmap_slot *slot = &receive_ring->slot[cur];
+          src = NETMAP_BUF(receive_ring, slot->buf_idx);
+          length = slot->len;
+          fn_ptr = funct_ptr[my_fd];
+          mem_ptr[my_fd] = NULL; //memory for request object
+          fn_ptr(my_fd, length, NULL, src); //length pass instead of id
+          //process_receive_buffer(src);
+          cur = nm_ring_next(receive_ring, cur);
+        }
+        receive_ring->head = receive_ring->cur = cur;
+        send_batch();
     }
 }
+
 void* allocReqCtxt(int alloc_sockid, int id, int index){
         client_list[alloc_sockid] = alloc_sockid;
 	if(index==1){
