@@ -35,7 +35,7 @@ boost::simple_segregated_storage<std::size_t> storage1;
 //
 int ds_size = 0; //to keep count. If exceeds threshold clear
 int ds_threshold = 131072, ds_sizing=1;
-int ds_portno[4] = {7000,7001,7002,7003}; 
+int ds_portno[4] = {7000,7001,7002,7003};
 /*
  * Convert an ASCII representation of an ethernet address to
  * binary form.
@@ -401,6 +401,7 @@ void send_batch() {
     //std::cout << "T.Tail: " << send_ring->tail << std::endl<< std::endl;
     ioctl(fds.fd, NIOCTXSYNC, NULL);
 }
+
 static void
 sigint_h(int sig)
 {
@@ -410,6 +411,7 @@ sigint_h(int sig)
     // // printf("file closed\n");
     signal(SIGINT, SIG_DFL);
 }
+
 int createServer(string inter_face, string server_ip, int server_port, string protocol){
     src_ip1 = server_ip.c_str();
     memset(arp_cache, 0, ARP_CACHE_LEN * sizeof(struct arp_cache_entry));
@@ -580,4 +582,8 @@ void getData(int connID, int id, int key, string localRemote, void callbackFnPtr
 		
 	}
 }
+/*
+void delData(int connID, int key){
 
+
+}*/

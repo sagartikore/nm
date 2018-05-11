@@ -149,6 +149,7 @@ inet_pton(AF_INET, buffer, &(ipd->ip_dst));
   tcp->th_sum = tcp_checksum(tcp, (ntohs(ipd->ip_len) -4*ipd->ip_hl), ipd->ip_src.s_addr, ipd->ip_dst.s_addr);
   //registerCallback(lb_fd, -1, "read", process_receive_buffer);
   sendData(lb_fd, map_id, dst, index1);
+  freeReqCtxt(lb_fd, len, 1);
   //cout<<"return1"<<endl;
   registerCallback(lb_fd, -1, "read", process_receive_buffer);
 }
